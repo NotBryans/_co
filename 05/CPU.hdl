@@ -1,0 +1,63 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/05/CPU.hdl
+
+CHIP CPU {
+
+    IN  inM[16],         // M value input  (M = contents of RAM[A])
+        instruction[16], // Instruction for execution
+        reset;           // Signals whether to re-start the current
+                         // program (reset==1) or continue executing
+                         // the current program (reset==0).
+
+    OUT outM[16],        // M value output
+        writeM,          // Write to M? 
+        addressM[15],    // Address in data memory (of M)
+        pc[15];          // address of next instruction
+
+    PARTS:
+    // Instruction decoding: A-instruction (instruction[15] == 0) vs C-instruction (instruction[15] == 1)
+    Not(in=instruction[15], out=isAInst);
+
+    // Mux before A-Register: selects between instruction and ALU output
+    Mux16(a=instruction, b=aluOut, sel=instruction[15], out=inA);
+
+    // Load A-Register if A-instruction OR (C-instruction AND d1 bit is 1)
+    And(a=instruction[15], b=instruction[5], out=cLoadA);
+    Or(a=isAInst, b=cLoadA, out=loadA);
+    ARegister(in=inA, load=loadA, out=outA, out[0..14]=addressM);
+
+    // Mux before ALU: selects between A-Register (a-bit == 0) and inM (a-bit == 1)
+    And(a=instruction[15], b=instruction[12], out=selAM);
+    Mux16(a=outA, b=inM, sel=selAM, out=outAM);
+
+    // Load D-Register if C-instruction AND d2 bit is 1
+    And(a=instruction[15], b=instruction[4], out=loadD);
+    DRegister(in=aluOut, load=loadD, out=outD);
+
+    // ALU Computation
+    ALU(x=outD, y=outAM,
+        zx=instruction[11], nx=instruction[10],
+        zy=instruction[9],  ny=instruction[8],
+        f=instruction[7],   no=instruction[6],
+        out=aluOut, out=outM, zr=zr, ng=ng);
+
+    // writeM if C-instruction AND d3 bit is 1
+    And(a=instruction[15], b=instruction[3], out=writeM);
+
+    // Program Counter Jump Logic
+    Not(in=ng, out=notNg);
+    Not(in=zr, out=notZr);
+    And(a=notNg, b=notZr, out=pos); // out > 0
+
+    And(a=instruction[2], b=ng, out=jlt);  // jump if < 0
+    And(a=instruction[1], b=zr, out=jeq);  // jump if == 0
+    And(a=instruction[0], b=pos, out=jgt); // jump if > 0
+
+    Or(a=jlt, b=jeq, out=jle);
+    Or(a=jle, b=jgt, out=jumpCond);
+    And(a=instruction[15], b=jumpCond, out=loadPC);
+
+    PC(in=outA, load=loadPC, inc=true, reset=reset, out[0..14]=pc);
+}
