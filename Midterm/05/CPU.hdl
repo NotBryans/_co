@@ -1,0 +1,48 @@
+CHIP CPU {
+    IN inM[16], instruction[16], reset;
+    OUT outM[16], writeM, addressM[15], pc[15];
+    PARTS:
+    // Decode A-instruction (0) vs C-instruction (1)
+    Not(in=instruction[15], out=isA);
+    And(a=instruction[15], b=true, out=isC);
+
+    // A-Register input & load control
+    And(a=isC, b=instruction[5], out=aluToA);
+    Mux16(a=instruction, b=aluOut, sel=aluToA, out=aRegIn);
+    Or(a=isA, b=aluToA, out=loadA);
+    ARegister(in=aRegIn, load=loadA, out=aOut, out[0..14]=addressM);
+
+    // Select A or M for ALU y-input
+    Mux16(a=aOut, b=inM, sel=instruction[12], out=amOut);
+
+    // D-Register load control
+    And(a=isC, b=instruction[4], out=loadD);
+    DRegister(in=aluOut, load=loadD, out=dOut);
+
+    // ALU execution
+    ALU(
+        x=dOut, y=amOut,
+        zx=instruction[11], nx=instruction[10],
+        zy=instruction[9],  ny=instruction[8],
+        f=instruction[7],   no=instruction[6],
+        out=aluOut, out=outM, zr=zr, ng=ng
+    );
+
+    // writeM output
+    And(a=isC, b=instruction[3], out=writeM);
+
+    // Jump condition logic (pos = !zr && !ng)
+    Or(a=zr, b=ng, out=zrOrNg);
+    Not(in=zrOrNg, out=pos);
+
+    And(a=instruction[2], b=ng, out=jlt);
+    And(a=instruction[1], b=zr, out=jeq);
+    And(a=instruction[0], b=pos, out=jgt);
+
+    Or(a=jlt, b=jeq, out=jle);
+    Or(a=jle, b=jgt, out=jmpCond);
+    And(a=isC, b=jmpCond, out=pcLoad);
+
+    // Program Counter
+    PC(in=aOut, load=pcLoad, inc=true, reset=reset, out[0..14]=pc);
+}
